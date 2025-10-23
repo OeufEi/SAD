@@ -54,10 +54,13 @@ def main(args):
 
     data_save = []
     args.distributed = torch.cuda.device_count() > 1
+
+    ################################### FIRST PLACE TO CHANGE #####################
     if args.space == 'p':
         G, zdim = None, None
     elif args.space == 'wp':
         G, zdim, w_dim, num_ws = load_sgxl(args.res, args)
+    ###############################################################################
 
     images_all, labels_all, indices_class = build_dataset(dst_train, class_map, num_classes)
 
@@ -68,9 +71,12 @@ def main(args):
         idx_shuffle = np.random.permutation(indices_class[c])[:n]
         return images_all[idx_shuffle].to(args.device)
 
+
+    ################################### SECOND PLACE TO CHANGE #####################
     latents, f_latents, label_syn = prepare_latents(channel=channel, num_classes=num_classes, im_size=im_size, zdim=zdim, G=G, class_map_inv=class_map_inv, get_images=get_images, args=args)
 
     optimizer_img = get_optimizer_img(latents=latents, f_latents=f_latents, G=G, args=args)
+    ###############################################################################
 
     criterion = nn.CrossEntropyLoss().to(args.device)
     print('%s training begins' % get_time())
@@ -89,16 +95,25 @@ def main(args):
     save_this_it = False
     for it in range(args.Iteration+1):
 
+        ################################### FIFTH PLACE TO CHANGE ###############################
+
         if it in eval_it_pool and it > 0:
             save_this_it = eval_loop(latents=latents, f_latents=f_latents, label_syn=label_syn, G=G, best_acc=best_acc,
                                      best_std=best_std, testloader=testloader,
                                      model_eval_pool=model_eval_pool, channel=channel, num_classes=num_classes,
                                      im_size=im_size, it=it, args=args)
 
+        #############################################################################################
+
+
+        ################################### SIXTH PLACE TO CHANGE ###############################
 
         if it > 0 and ((it in eval_it_pool and (save_this_it or it % 1000 == 0)) or (
                 args.save_it is not None and it % args.save_it == 0)):
             image_logging(latents=latents, f_latents=f_latents, label_syn=label_syn, G=G, it=it, save_this_it=save_this_it, args=args)
+
+        #########################################################################################
+
 
         ''' Train synthetic data '''
         net = get_network(args.model, channel, num_classes, im_size, depth=args.depth, width=args.width).to(args.device) # get a random model
@@ -130,6 +145,8 @@ def main(args):
                     if 'BatchNorm' in module._get_name():  #BatchNorm
                         module.eval() # fix mu and sigma of every BatchNorm layer
 
+            ################################## THIRD PLACE TO CHANGE ############################
+
             if args.space == "wp":
                 with torch.no_grad():
                     image_syn_w_grad = torch.cat([latent_to_im(G, (syn_image_split, f_latents_split), args) for
@@ -139,6 +156,8 @@ def main(args):
                                            torch.split(label_syn, args.sg_batch))])
             else:
                 image_syn_w_grad = latents
+
+            #####################################################################################
 
             if args.space == "wp":
                 image_syn = image_syn_w_grad.detach()
@@ -179,12 +198,16 @@ def main(args):
 
 
 
+            ################################## FOURTH PLACE TO CHANGE ############################
+
             if args.space == "wp":
                 # this method works in-line and back-props gradients to latents and f_latents
                 gan_backward(latents=latents, f_latents=f_latents, image_syn=image_syn, G=G, args=args)
 
             else:
                 latents.grad = image_syn.grad.detach().clone()
+            
+            #####################################################################################
 
 
             optimizer_img.step()
