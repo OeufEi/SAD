@@ -188,8 +188,6 @@ def load_lfm(res, args=None):
     p = os.path.join("LFM")
     if p not in sys.path:
         sys.path.append(p)
-    import dnnlib
-    import legacy
     from test_flow_latent import create_network
     from diffusers.models import AutoencoderKL
 
