@@ -62,6 +62,8 @@ def main(args):
         G, zdim = None, None
     elif args.space == 'wp':
         G, zdim, w_dim, num_ws = load_sgxl(args.res, args)
+    elif args.space == 'lfm':
+        lfm, vae = load_lfm(args.res, args)
     ###############################################################################
 
     images_all, labels_all, indices_class = build_dataset(dst_train, class_map, num_classes)
@@ -162,8 +164,11 @@ def main(args):
                                        zip(torch.split(latents, args.sg_batch),
                                            torch.split(f_latents, args.sg_batch),
                                            torch.split(label_syn, args.sg_batch))])
+            elif args.space == "lfm":
+                image_syn_w_grad = lfm_latent_to_im(lfm, vae, latents, args, y=None_or_labels)
             else:
                 image_syn_w_grad = latents
+
 
             #####################################################################################
 

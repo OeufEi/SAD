@@ -179,85 +179,79 @@ def eval_loop(latents=None, f_latents=None, label_syn=None, G=None, best_acc={},
     return save_this_it
 
 
-def load_sgxl(res, args=None):
+def load_lfm(res, args=None):
     import sys
     import os
-    p = os.path.join("stylegan_xl")
+    p = os.path.join("LFM")
     if p not in sys.path:
         sys.path.append(p)
     import dnnlib
     import legacy
-    from sg_forward import StyleGAN_Wrapper
-    device = torch.device('cuda')
-    if args.special_gan is not None:
-        if args.special_gan == "ffhq":
-            # network_pkl = "https://s3.eu-central-1.amazonaws.com/avg-projects/stylegan_xl/models/ffhq{}.pkl".format(res)
-            network_pkl = "../stylegan_xl/ffhq{}.pkl".format(res)
-            key = "G_ema"
-        elif args.special_gan == "pokemon":
-            # network_pkl = "https://s3.eu-central-1.amazonaws.com/avg-projects/stylegan_xl/models/pokemon{}.pkl".format(res)
-            network_pkl = "../stylegan_xl/pokemon{}.pkl".format(
-                res)
-            key = "G_ema"
-
-    elif "imagenet" in args.dataset:
-        if args.rand_gan_con:
-            network_pkl = "../stylegan_xl/random_conditional_{}.pkl".format(res)
-            key = "G"
-        elif args.rand_gan_un:
-            network_pkl = "../stylegan_xl/random_unconditional_{}.pkl".format(res)
-            key = "G"
-        else:
-            network_pkl = "https://s3.eu-central-1.amazonaws.com/avg-projects/stylegan_xl/models/imagenet{}.pkl".format(res)
-            key = "G_ema"
-    elif args.dataset == "CIFAR10":
-        if args.rand_gan_un:
-            network_pkl = "../stylegan_xl/random_unconditional_32.pkl"
-            key = "G"
-        else:
-            network_pkl = "https://s3.eu-central-1.amazonaws.com/avg-projects/stylegan_xl/models/cifar10.pkl"
-            key = "G_ema"
-    elif args.dataset == "CIFAR100":
-        if args.rand_gan_con:
-            network_pkl = "../stylegan_xl/random_conditional_32.pkl"
-            key = "G"
-        elif args.rand_gan_un:
-            network_pkl = "../stylegan_xl/random_unconditional_32.pkl"
-            key = "G"
-    with dnnlib.util.open_url(network_pkl) as f:
-        G = legacy.load_network_pkl(f)[key]
-        G = G.eval().requires_grad_(False).to(device)
-
-    z_dim = G.z_dim
-    w_dim = G.w_dim
-    num_ws = G.num_ws
-
-    G.eval()
-    mapping = G.mapping
-    G = StyleGAN_Wrapper(G)
-    gpu_num = torch.cuda.device_count()
-    if gpu_num > 1:
-
-        G = nn.DataParallel(G)
-        mapping = nn.DataParallel(mapping)
-
-    G.mapping = mapping
-
-    return G, z_dim, w_dim, num_ws
+    from test_flow_latent import create_network
+    from diffusers.models import AutoencoderKL
 
 
-def latent_to_im(G, latents, args=None):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+    # --- Select pretrained checkpoints based on dataset ---
+    if args is None:
+        raise ValueError("load_lfm requires args with dataset and ckpt info")
+
+
+    if "imagenet" in args.dataset.lower():
+        pass
+        # implement in the future
+        #flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_imagenet{res}.pt")
+        #vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_imagenet")
+    elif args.dataset.upper() == "CIFAR10":
+        flow_ckpt = getattr(args, "lfm_ckpt", f"../LFM/saved_info/latent_flow/imagenet/imnet_f8_adm/model_1125.pth")
+        vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/VAE_cifar10.pt")
+    #elif args.dataset.upper() == "CIFAR100":
+        #flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_cifar100_{res}.pt")
+        #vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_cifar100")
+    #else:
+        # default, but unimplemented
+        flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_generic_{res}.pt")
+        vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_generic")
+
+
+    lfm = create_network(args).to(device)
+    if os.path.exists(flow_ckpt):
+        ckpt = torch.load(flow_ckpt, map_location=device)
+        lfm.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
+    lfm.eval()
+
+
+    vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
+    vae.eval()
+
+
+    latent_shape = (4, res // 8, res // 8)
+
+
+    print(f"[load_lfm] Loaded LFM + VAE for dataset={args.dataset} at res={res}")
+
+
+    return lfm, vae, latent_shape
+
+
+def lfm_latent_to_im(G, latents, args=None):
 
     if args.space == "p":
         return latents
 
+
     mean, std = config.mean, config.std
+
 
     if "imagenet" in args.dataset:
         class_map = {i: x for i, x in enumerate(config.img_net_classes)}
 
+
         if args.space == "p":
             im = latents
+
 
         elif args.space == "wp":
             if args.layer is None or args.layer==-1:
@@ -265,8 +259,10 @@ def latent_to_im(G, latents, args=None):
             else:
                 im = G(latents[0], latents[1], args.layer, mode="from_f")
 
+
         im = (im + 1) / 2
         im = (im - mean) / std
+
 
     elif args.dataset == "CIFAR10" or args.dataset == "CIFAR100":
         if args.space == "p":
@@ -277,13 +273,17 @@ def latent_to_im(G, latents, args=None):
             else:
                 im = G(latents[0], latents[1], args.layer, mode="from_f")
 
+
             if args.distributed and False:
                 mean, std = config.mean_1, config.std_1
+
 
         im = (im + 1) / 2
         im = (im - mean) / std
 
+
     return im
+
 
 
 def image_logging(latents=None, f_latents=None, label_syn=None, G=None, it=None, save_this_it=None, args=None):
