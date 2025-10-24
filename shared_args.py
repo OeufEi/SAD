@@ -89,7 +89,6 @@ def add_shared_args():
     parser.add_argument('--resblock_updown',default=True)
     parser.add_argument('--use_new_attention_order', default=False)
     parser.add_argument('--label_dropout', default=0.0)
-    parser.add_argument('--num_in_channels', default=4)
 
 
 
