@@ -189,9 +189,10 @@ def main(args):
                 image_syn = image_syn_w_grad
             ''' update synthetic data '''
 
-            optimizer_img.zero_grad()
+            optimizer_img.zero_grad(set_to_none=True)
+
+            total_loss = 0.0
             for c in range(num_classes):
-                loss = torch.tensor(0.0).to(args.device)
                 img_real = get_images(c, args.batch_real)
                 lab_real = torch.ones((img_real.shape[0],), device=args.device, dtype=torch.long) * c
                 img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
@@ -211,15 +212,13 @@ def main(args):
                 loss_syn = criterion(output_syn, lab_syn)
                 gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
 
-                loss = match_loss(gw_syn, gw_real, args)
+                loss_c = match_loss(gw_syn, gw_real, args)
 
+                total_loss += loss_c
 
+                del img_real, output_real, loss_real, gw_real, output_syn, loss_syn, gw_syn, loss_c
 
-                loss.backward()
-                loss_avg += loss.item()
-                del img_real, output_real, loss_real, gw_real, output_syn, loss_syn, gw_syn, loss
-
-
+            total_loss.backward()
 
             ################################## FOURTH PLACE TO CHANGE COMPLETE ############################
 
@@ -235,7 +234,7 @@ def main(args):
 
 
             optimizer_img.step()
-            optimizer_img.zero_grad()
+            optimizer_img.zero_grad(set_to_none=True)
 
 
             if ol == args.outer_loop - 1:
