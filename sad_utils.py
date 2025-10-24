@@ -214,11 +214,16 @@ def load_lfm(res, args=None):
         vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_generic")
 
     lfm = create_network(args).to(device)
-    print("hello")
-    if os.path.exists(flow_ckpt):
-        print(flow_ckpt)
-        ckpt = torch.load(flow_ckpt, map_location=device)
-        lfm.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
+    # Example fix inside load_lfm()
+    ckpt = torch.load(flow_ckpt, map_location=device)
+    # Unwrap if saved as {'model': state_dict, ...}
+    state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    # Remove 'module.' prefix from DataParallel models
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        new_key = k.replace("module.", "")
+        new_state_dict[new_key] = v
+    lfm.load_state_dict(new_state_dict)
     lfm.eval()
 
     #vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
