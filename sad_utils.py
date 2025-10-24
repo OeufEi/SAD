@@ -249,14 +249,14 @@ def sample_from_model(model, x_0, model_kwargs, args):
     dtype  = x_0.dtype
 
     # Choose solver options
-    if getattr(args, "method", None) in ADAPTIVE_SOLVER:
-        options = {"dtype": torch.float64}  # dopri5, bdf benefit from float64 internal state
-    else:
+    #if getattr(args, "method", None) in ADAPTIVE_SOLVER:
+    options = {"dtype": torch.float64}  # dopri5, bdf benefit from float64 internal state
+    #else:
         # fixed-step solvers (e.g., euler, midpoint, rk4) use explicit step_size; optional stochastic perturb
-        options = {
-            "step_size": getattr(args, "step_size", 0.1),
-            "perturb":   getattr(args, "perturb", False),
-        }
+        #options = {
+        #    "step_size": getattr(args, "step_size", 0.1),
+        #    "perturb":   getattr(args, "perturb", False),
+        #}
 
     # Optionally wrap model to count NFEs
     count_nfe = getattr(args, "compute_nfe", False)
