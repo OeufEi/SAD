@@ -108,10 +108,17 @@ def main(args):
         ################################### FIFTH PLACE TO CHANGE ###############################
 
         if it in eval_it_pool and it > 0:
-            save_this_it = lfm_eval_loop(latents=latents, f_latents=f_latents, label_syn=label_syn, G=G, best_acc=best_acc,
-                                     best_std=best_std, testloader=testloader,
-                                     model_eval_pool=model_eval_pool, channel=channel, num_classes=num_classes,
-                                     im_size=im_size, it=it, args=args, lfm=lfm, vae=vae)
+            if args.space == 'lfm':
+                save_this_it = lfm_eval_loop(latents=latents, f_latents=f_latents, label_syn=label_syn, G=G, best_acc=best_acc,
+                                        best_std=best_std, testloader=testloader,
+                                        model_eval_pool=model_eval_pool, channel=channel, num_classes=num_classes,
+                                        im_size=im_size, it=it, args=args, lfm=lfm, vae=vae)
+            else:
+                save_this_it = eval_loop(latents=latents, f_latents=f_latents, label_syn=label_syn, G=G, best_acc=best_acc,
+                                        best_std=best_std, testloader=testloader,
+                                        model_eval_pool=model_eval_pool, channel=channel, num_classes=num_classes,
+                                        im_size=im_size, it=it, args=args)
+            
 
         #############################################################################################
 
