@@ -69,9 +69,9 @@ def add_shared_args():
     parser.add_argument('--method', default='dopri5')
     parser.add_argument('--num_steps', default=0)
     parser.add_argument('--cfg', default=1.25)
-    parser.add_argument('--image_size', default=32)
-    parser.add_argument('--ch_mult',default=[1,2,2,2])
-    parser.add_argument('--attn_resolutions', default=[8,4])
+    parser.add_argument('--image_size', default=4)
+    parser.add_argument('--ch_mult',default=[1,2])
+    parser.add_argument('--attn_resolutions', default=[])
     parser.add_argument('--use_origin_adm', default=True)
     parser.add_argument('--nf', default=128)
     parser.add_argument('--batch_size', default=128)
@@ -93,7 +93,7 @@ def add_shared_args():
     parser.add_argument('--atol', default=1e-5)
     parser.add_argument("--rtol", type=float, default=1e-5, help="absolute tolerance error")
     parser.add_argument('--cfg_scale', default=1.25)
-
+    parser.add_argument('--scale_factor', default=8)
 
 
 
