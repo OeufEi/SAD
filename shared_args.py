@@ -75,6 +75,22 @@ def add_shared_args():
     parser.add_argument('--use_origin_adm', default=True)
     parser.add_argument('--nf', default=128)
     parser.add_argument('--batch_size', default=128)
+    parser.add_argument('--layout', default=False)
+    parser.add_argument('--num_in_channels', default = 4)
+    parser.add_argument('--num_out_channels', default = 4)
+    parser.add_argument('--num_classes', default=10)
+    parser.add_argument('--num_res_blocks', default =2)
+    parser.add_argument('--dropout', default = 0.0)
+    parser.add_argument('--resamp_with_conv', default=True)
+    parser.add_argument('--num_heads', default = 4)
+    parser.add_argument('--num_head_channels', default=-1)
+    parser.add_argument('--num_heads_upsample', default=-1)
+    parser.add_argument('--use_scale_shift_norm', default=True)
+    parser.add_argument('--resblock_updown',default=True)
+    parser.add_argument('--use_new_attention_order', default=False)
+    parser.add_argument('--label_dropout', default=0.0)
+    parser.add_argument('--num_in_channels', default=4)
+
 
 
     return parser
