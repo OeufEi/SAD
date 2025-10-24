@@ -214,7 +214,9 @@ def load_lfm(res, args=None):
         vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_generic")
 
     lfm = create_network(args).to(device)
+    print("hello")
     if os.path.exists(flow_ckpt):
+        print(flow_ckpt)
         ckpt = torch.load(flow_ckpt, map_location=device)
         lfm.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
     lfm.eval()
