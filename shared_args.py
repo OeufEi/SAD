@@ -69,7 +69,7 @@ def add_shared_args():
     parser.add_argument('--method', default='dopri5')
     parser.add_argument('--num_steps', default=0)
     parser.add_argument('--cfg', default=1.25)
-    parser.add_argument('--img_size', default=32)
+    parser.add_argument('--image_size', default=32)
     parser.add_argument('--ch_mult',default="1 2 2 2")
     parser.add_argument('--attn_res', default="8 4")
     parser.add_argument('--use_origin_adm', default=True)
@@ -88,6 +88,7 @@ def add_shared_args():
     parser.add_argument('--resblock_updown',default=True)
     parser.add_argument('--use_new_attention_order', default=False)
     parser.add_argument('--label_dropout', default=0.0)
+    parser.add_argument('--num_in_channels', default=4)
 
 
 
