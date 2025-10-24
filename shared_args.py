@@ -92,7 +92,7 @@ def add_shared_args():
     parser.add_argument('--compute_nfe', default=False)
     parser.add_argument('--atol', default=1e-5)
     parser.add_argument("--rtol", type=float, default=1e-5, help="absolute tolerance error")
-    
+    parser.add_argument('--cfg_scale', default=1.25)
 
 
 
