@@ -189,6 +189,11 @@ def main(args):
                 image_syn = image_syn_w_grad
             ''' update synthetic data '''
 
+            if args.space == 'lfm':
+                assert torch.is_grad_enabled(), "Grad disabled!!"
+                assert img_syn.requires_grad, "image_syn lost its graph (detached/no_grad?)"
+                assert latents.requires_grad, "latents must require grad"
+
             optimizer_img.zero_grad(set_to_none=True)
 
             total_loss = 0.0
