@@ -184,57 +184,128 @@ def lfm_eval_loop(
     return save_this_it
 
 def load_lfm(res, args=None):
-    import sys
-    import os
+    import sys, os
+    import torch
+    if args is None:
+        raise ValueError("load_lfm requires args with dataset and ckpt info")
+
+    # ensure LFM repo on path
     p = os.path.join("LFM")
     if p not in sys.path:
         sys.path.append(p)
-    from LFM.models import create_network
+
+    # import factory from LFM repo
+    try:
+        from LFM.models import create_network
+    except Exception as e:
+        raise ImportError(f"Could not import LFM.models.create_network: {e}")
+
     from diffusers.models import AutoencoderKL
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    if args is None:
-        raise ValueError("load_lfm requires args with dataset and ckpt info")
-
+    # choose ckpt paths (keep your previous logic)
     if "imagenet" in args.dataset.lower():
-        pass
-        # implement in the future
-        #flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_imagenet{res}.pt")
-        #vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_imagenet")
+        flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_imagenet{res}.pt")
+        vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_imagenet")
     elif args.dataset.upper() == "CIFAR10":
-        flow_ckpt = getattr(args, "lfm_ckpt", "LFM/saved_info/latent_flow/imagenet/imnet_f8_adm/model_1125.pth")
+        flow_ckpt = getattr(args, "lfm_ckpt", "/LFM/saved_info/latent_flow/imagenet/imnet_f8_adm/model_1125.pth")
         vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/VAE_cifar10.pt")
-    #elif args.dataset.upper() == "CIFAR100":
-        #flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_cifar100_{res}.pt")
-        #vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_cifar100")
     else:
-        # default, but unimplemented
         flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_generic_{res}.pt")
         vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_generic")
 
+    # instantiate model using current args
     lfm = create_network(args).to(device)
-    # Example fix inside load_lfm()
-    ckpt = torch.load(flow_ckpt, map_location=device)
-    # Unwrap if saved as {'model': state_dict, ...}
-    state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
-    # Remove 'module.' prefix from DataParallel models
-    new_state_dict = {}
-    for k, v in state_dict.items():
-        new_key = k.replace("module.", "")
-        new_state_dict[new_key] = v
-    lfm.load_state_dict(new_state_dict)
+
+    # ---- load checkpoint and extract state_dict ----
+    if not os.path.exists(flow_ckpt):
+        raise FileNotFoundError(f"flow checkpoint not found: {flow_ckpt}")
+
+    raw = torch.load(flow_ckpt, map_location=device)
+    # heuristics to find the state dict inside the checkpoint
+    if isinstance(raw, dict):
+        # common keys: 'model', 'state_dict', 'state_dict_ema', maybe 'net' ...
+        for candidate in ("model", "state_dict", "state_dict_ema", "net", "state"):
+            if candidate in raw:
+                sd = raw[candidate]
+                print(f"[load_lfm] using checkpoint field: '{candidate}'")
+                break
+        else:
+            # maybe the dict *is* the state dict (no wrapper)
+            # or maybe it's a ddp-saved dict with 'module.' keys
+            sd = raw
+    else:
+        sd = raw
+
+    # If nested under 'module' or 'model' prefix inside keys, normalize them
+    new_sd = {}
+    for k, v in sd.items():
+        newk = k
+        # remove common wrappers
+        for prefix in ("module.model.", "module.", "model."):
+            if newk.startswith(prefix):
+                newk = newk[len(prefix):]
+        new_sd[newk] = v
+
+    # --- compare shapes and print quick diagnostics ---
+    model_sd = lfm.state_dict()
+    print(f"[load_lfm] checkpoint keys: {len(new_sd)}; model keys: {len(model_sd)}")
+    # show sample keys
+    ckpt_keys_sample = list(new_sd.keys())[:40]
+    model_keys_sample = list(model_sd.keys())[:40]
+    print("[load_lfm] sample ckpt keys:", ckpt_keys_sample)
+    print("[load_lfm] sample model keys:", model_keys_sample)
+
+    # detect exact-shape matches and shape mismatches
+    shape_matches = []
+    shape_mismatches = []
+    unmatched_ckpt_keys = []
+    for k, v in new_sd.items():
+        if k in model_sd:
+            if v.shape == model_sd[k].shape:
+                shape_matches.append(k)
+            else:
+                shape_mismatches.append((k, v.shape, model_sd[k].shape))
+        else:
+            unmatched_ckpt_keys.append(k)
+
+    print(f"[load_lfm] exact matches: {len(shape_matches)}")
+    if shape_mismatches:
+        print(f"[load_lfm] shape mismatches (first 20): {shape_mismatches[:20]}")
+    if unmatched_ckpt_keys:
+        print(f"[load_lfm] unmatched ckpt keys (first 40): {unmatched_ckpt_keys[:40]}")
+
+    # try to load (non-strict) so matching params are used and we can see missing/unexpected
+    load_res = lfm.load_state_dict(new_sd, strict=False)
+    print("[load_lfm] load_state_dict result - missing keys:", len(load_res.missing_keys))
+    if load_res.missing_keys:
+        print("  Missing (first 40):", load_res.missing_keys[:40])
+    print("[load_lfm] load_state_dict result - unexpected keys:", len(load_res.unexpected_keys))
+    if load_res.unexpected_keys:
+        print("  Unexpected (first 40):", load_res.unexpected_keys[:40])
+
+    # if there are many missing keys, give helpful exception
+    if len(load_res.missing_keys) > 0:
+        print("[load_lfm] WARNING: many missing keys after load. This typically means the model "
+              "was instantiated with different constructor args or the checkpoint is for a different model variant.")
+        # do not raise here; allow user to inspect prints. If you want strictness, raise below.
+        # raise RuntimeError("Missing keys after loading checkpoint. See printed diagnostics.")
+
     lfm.eval()
 
-    #vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
-    vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(device)
+    # load VAE (keep your existing choice)
+    # you may want to use the same VAE checkpoint used during LFM training for best fidelity
+    try:
+        vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
+    except Exception as e:
+        # fallback to SD VAE if provided string
+        print(f"[load_lfm] could not load {vae_ckpt} ({e}), falling back to 'stabilityai/sd-vae-ft-mse'")
+        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(device)
     vae.eval()
 
-    latent_shape = (4, res // 8, res // 8)
-
-    print(f"[load_lfm] Loaded LFM + VAE for dataset={args.dataset} at res={res}")
-
-    return lfm, vae #, latent_shape
+    print(f"[load_lfm] Done. Loaded LFM + VAE for dataset={args.dataset} at res={res}")
+    return lfm, vae
 
 def sample_from_model(model, x_0, model_kwargs, args):
     """
