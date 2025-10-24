@@ -87,47 +87,51 @@ def get_eval_lrs(args):
     return eval_pool_dict
 
 
-def eval_loop(latents=None, f_latents=None, label_syn=None, G=None, best_acc={}, best_std={}, testloader=None, model_eval_pool=[], it=0, channel=3, num_classes=10, im_size=(32, 32), args=None):
-    curr_acc_dict = {}
-    max_acc_dict = {}
-
-    curr_std_dict = {}
-    max_std_dict = {}
-
+def lfm_eval_loop(
+    latents=None, f_latents=None, label_syn=None, G=None,
+    best_acc={}, best_std={}, testloader=None, model_eval_pool=[],
+    it=0, channel=3, num_classes=10, im_size=(32, 32), args=None,
+    lfm=None, vae=None   # <- NEW for LFM evaluation
+):
+    curr_acc_dict, max_acc_dict = {}, {}
+    curr_std_dict, max_std_dict = {}, {}
     eval_pool_dict = get_eval_lrs(args)
-
     save_this_it = False
-    
-    for model_eval in model_eval_pool:
 
+    for model_eval in model_eval_pool:
         if model_eval != args.model and args.wait_eval and it != args.Iteration:
             continue
-        print('-------------------------\nEvaluation\nmodel_train = %s, model_eval = %s, iteration = %d' % (
-        args.model, model_eval, it))
+        print('-------------------------\nEvaluation\nmodel_train = %s, model_eval = %s, iteration = %d'
+              % (args.model, model_eval, it))
 
-        accs_test = []
-        accs_train = []
+        accs_test, accs_train = [], []
 
         for it_eval in range(args.num_eval):
-            net_eval = get_network(model_eval, channel, num_classes, im_size, width=args.width, depth=args.depth,
-                                   dist=False).to(args.device)  # get a random model
-            eval_lats = latents
-            eval_labs = label_syn
-            image_syn = latents
-            image_syn_eval, label_syn_eval = copy.deepcopy(image_syn.detach()), copy.deepcopy(
-                eval_labs.detach())  # avoid any unaware modification
+            net_eval = get_network(
+                model_eval, channel, num_classes, im_size,
+                width=args.width, depth=args.depth, dist=False
+            ).to(args.device)
 
-            if args.space == "wp":
-                with torch.no_grad():
-                    image_syn_eval = torch.cat(
-                        [latent_to_im(G, (image_syn_eval_split, f_latents_split), args=args).detach() for
-                         image_syn_eval_split, f_latents_split, label_syn_split in
-                         zip(torch.split(image_syn_eval, args.sg_batch), torch.split(f_latents, args.sg_batch),
-                             torch.split(label_syn, args.sg_batch))])
+            # make a safe copy (no accidental in-place edits)
+            image_syn_eval = copy.deepcopy(latents.detach())
+            label_syn_eval = copy.deepcopy(label_syn.detach())
+
+            if lfm is None or vae is None:
+                raise ValueError("eval_loop: lfm/vae must be provided when args.space == 'lfm'")
+            with torch.no_grad():
+                image_syn_eval = torch.cat([
+                    lfm_latent_to_im(lfm, vae, lat_split, args, y=lab_split).detach()
+                    for lat_split, lab_split in zip(
+                        torch.split(image_syn_eval, args.sg_batch),
+                        torch.split(label_syn_eval, args.sg_batch)
+                    )
+                ])
+            # ---------------------------------------------------------------
 
             args.lr_net = eval_pool_dict[model_eval]
-            _, acc_train, acc_test = evaluate_synset(it_eval, net_eval, image_syn_eval, label_syn_eval, testloader,
-                                                     args=args, aug=True)
+            _, acc_train, acc_test = evaluate_synset(
+                it_eval, net_eval, image_syn_eval, label_syn_eval, testloader, args=args, aug=True
+            )
             del _
             del net_eval
             accs_test.append(acc_test)
@@ -137,47 +141,46 @@ def eval_loop(latents=None, f_latents=None, label_syn=None, G=None, best_acc={},
         accs_test = np.array(accs_test)
         accs_train = np.array(accs_train)
         acc_test_mean = np.mean(np.max(accs_test, axis=1))
-        acc_test_std = np.std(np.max(accs_test, axis=1))
-        best_dict_str = "{}".format(model_eval)
-        if acc_test_mean > best_acc[best_dict_str]:
-            best_acc[best_dict_str] = acc_test_mean
-            best_std[best_dict_str] = acc_test_std
+        acc_test_std  = np.std(np.max(accs_test, axis=1))
+
+        key = f"{model_eval}"
+        if acc_test_mean > best_acc[key]:
+            best_acc[key] = acc_test_mean
+            best_std[key] = acc_test_std
             save_this_it = True
 
-        curr_acc_dict[best_dict_str] = acc_test_mean
-        curr_std_dict[best_dict_str] = acc_test_std
+        curr_acc_dict[key] = acc_test_mean
+        curr_std_dict[key] = acc_test_std
+        max_acc_dict[key]  = best_acc[key]
+        max_std_dict[key]  = best_std[key]
 
-        max_acc_dict[best_dict_str] = best_acc[best_dict_str]
-        max_std_dict[best_dict_str] = best_std[best_dict_str]
-
-        print('Evaluate %d random %s, mean = %.4f std = %.4f\n-------------------------' % (
-        len(accs_test[:, -1]), model_eval, acc_test_mean, np.std(np.max(accs_test, axis=1))))
+        print('Evaluate %d random %s, mean = %.4f std = %.4f\n-------------------------'
+              % (len(accs_test[:, -1]), model_eval, acc_test_mean, np.std(np.max(accs_test, axis=1))))
         wandb.log({'Accuracy/{}'.format(model_eval): acc_test_mean}, step=it)
-        wandb.log({'Max_Accuracy/{}'.format(model_eval): best_acc[best_dict_str]}, step=it)
+        wandb.log({'Max_Accuracy/{}'.format(model_eval): best_acc[key]}, step=it)
         wandb.log({'Std/{}'.format(model_eval): acc_test_std}, step=it)
-        wandb.log({'Max_Std/{}'.format(model_eval): best_std[best_dict_str]}, step=it)
+        wandb.log({'Max_Std/{}'.format(model_eval): best_std[key]}, step=it)
 
     wandb.log({
-        'Accuracy/Avg_All'.format(model_eval): np.mean(np.array(list(curr_acc_dict.values()))),
-        'Std/Avg_All'.format(model_eval): np.mean(np.array(list(curr_std_dict.values()))),
-        'Max_Accuracy/Avg_All'.format(model_eval): np.mean(np.array(list(max_acc_dict.values()))),
-        'Max_Std/Avg_All'.format(model_eval): np.mean(np.array(list(max_std_dict.values()))),
+        'Accuracy/Avg_All': np.mean(np.array(list(curr_acc_dict.values()))),
+        'Std/Avg_All':      np.mean(np.array(list(curr_std_dict.values()))),
+        'Max_Accuracy/Avg_All': np.mean(np.array(list(max_acc_dict.values()))),
+        'Max_Std/Avg_All':      np.mean(np.array(list(max_std_dict.values()))),
     }, step=it)
 
-    curr_acc_dict.pop("{}".format(args.model))
-    curr_std_dict.pop("{}".format(args.model))
-    max_acc_dict.pop("{}".format(args.model))
-    max_std_dict.pop("{}".format(args.model))
+    curr_acc_dict.pop(f"{args.model}", None)
+    curr_std_dict.pop(f"{args.model}", None)
+    max_acc_dict.pop(f"{args.model}", None)
+    max_std_dict.pop(f"{args.model}", None)
 
     wandb.log({
-        'Accuracy/Avg_Cross'.format(model_eval): np.mean(np.array(list(curr_acc_dict.values()))),
-        'Std/Avg_Cross'.format(model_eval): np.mean(np.array(list(curr_std_dict.values()))),
-        'Max_Accuracy/Avg_Cross'.format(model_eval): np.mean(np.array(list(max_acc_dict.values()))),
-        'Max_Std/Avg_Cross'.format(model_eval): np.mean(np.array(list(max_std_dict.values()))),
+        'Accuracy/Avg_Cross': np.mean(np.array(list(curr_acc_dict.values()))) if curr_acc_dict else 0.0,
+        'Std/Avg_Cross':      np.mean(np.array(list(curr_std_dict.values()))) if curr_std_dict else 0.0,
+        'Max_Accuracy/Avg_Cross': np.mean(np.array(list(max_acc_dict.values()))) if max_acc_dict else 0.0,
+        'Max_Std/Avg_Cross':      np.mean(np.array(list(max_std_dict.values()))) if max_std_dict else 0.0,
     }, step=it)
 
     return save_this_it
-
 
 def load_lfm(res, args=None):
     import sys
@@ -357,38 +360,3 @@ def lfm_image_logging(latents=None, label_syn=None, it=None, save_this_it=None, 
                     torch.nan_to_num(grid.detach().cpu()))}, step=it)
 
     del upsampled, grid
-
-
-def gan_backward(latents=None, f_latents=None, image_syn=None, G=None, args=None):
-    f_latents.grad = None
-    latents_grad_list = []
-    f_latents_grad_list = []
-    for latents_split, f_latents_split, dLdx_split in zip(torch.split(latents, args.sg_batch),
-                                                          torch.split(f_latents, args.sg_batch),
-                                                          torch.split(image_syn.grad, args.sg_batch)):
-        latents_detached = latents_split.detach().clone().requires_grad_(True)
-        f_latents_detached = f_latents_split.detach().clone().requires_grad_(True)
-
-        syn_images = latent_to_im(G=G, latents=(latents_detached, f_latents_detached), args=args)
-
-        syn_images.backward((dLdx_split,))
-
-        latents_grad_list.append(latents_detached.grad)
-        f_latents_grad_list.append(f_latents_detached.grad)
-
-        del syn_images
-        del latents_split
-        del f_latents_split
-        del dLdx_split
-        del f_latents_detached
-        del latents_detached
-
-        gc.collect()
-
-    latents.grad = torch.cat(latents_grad_list)
-    del latents_grad_list
-    if args.layer != -1:
-        f_latents.grad = torch.cat(f_latents_grad_list)
-        del f_latents_grad_list
-
-
