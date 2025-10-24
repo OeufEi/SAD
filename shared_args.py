@@ -76,7 +76,6 @@ def add_shared_args():
     parser.add_argument('--nf', default=128)
     parser.add_argument('--batch_size', default=128)
     parser.add_argument('--layout', default=False)
-    parser.add_argument('--num_in_channels', default = 4)
     parser.add_argument('--num_out_channels', default = 4)
     parser.add_argument('--num_classes', default=10)
     parser.add_argument('--num_res_blocks', default =2)
