@@ -275,9 +275,12 @@ def sample_from_model(model, x_0, model_kwargs, args):
     # ODE RHS
     def denoiser(t_scalar, x_state):
         if cfg_scale is not None and cfg_scale > 1.0 and hasattr(wrapped_model, "forward_with_cfg"):
-            return wrapped_model.forward_with_cfg(t_scalar, x_state, **{**model_kwargs, "cfg_scale": cfg_scale})
+            # Only pass cfg_scale if the model supports classifier-free guidance
+            return wrapped_model.forward_with_cfg(t_scalar, x_state, **model_kwargs, cfg_scale=cfg_scale)
         else:
-            return wrapped_model(t_scalar, x_state, **model_kwargs)
+            # Ensure we never pass cfg_scale to plain forward()
+            clean_kwargs = {k: v for k, v in model_kwargs.items() if k != "cfg_scale"}
+            return wrapped_model(t_scalar, x_state, **clean_kwargs)
 
     # Run adjoint ODE solve (keeps graph for grads w.r.t. x_0)
     x_traj = odeint(
