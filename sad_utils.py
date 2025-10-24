@@ -27,103 +27,47 @@ def build_dataset(ds, class_map, num_classes):
     return images_all, labels_all, indices_class
 
 
-def prepare_latents(channel=3, num_classes=10, im_size=(32, 32), zdim=512, G=None, class_map_inv={}, get_images=None, args=None):
+def prepare_latents_lfm(num_classes=10, im_size=(32, 32), args=None):
     with torch.no_grad():
         ''' initialize the synthetic data '''
         label_syn = torch.tensor([i*np.ones(args.ipc, dtype=np.int64) for i in range(num_classes)], dtype=torch.long, requires_grad=False, device=args.device).view(-1) # [0,0,0, 1,1,1, ..., 9,9,9]
+        # ------------------------------
+        # LFM space: optimize VAE latents
+        # ------------------------------
+        # Your LFM sampler/decoders expect VAE latents of shape [B, 4, H/8, W/8]
+        # (see test_flow_latent*.py where x is sampled as randn(B, 4, image_size//8, image_size//8))
+        # H/8, W/8 comes from the VAE downsample factor f=8.
+        f = args.f  # default 8, consistent with your flow code
+        h, w = im_size
+        h_lat, w_lat = h // f, w // f
 
-        if args.space == 'p':
-            latents = torch.randn(size=(num_classes * args.ipc, channel, im_size[0], im_size[1]), dtype=torch.float, requires_grad=False, device=args.device)
-            f_latents = None
+        # initialize synthetic VAE latents (trainable)
+        latents = torch.randn(
+            num_classes * args.ipc, 4, h_lat, w_lat,
+            device=args.device, dtype=torch.float32, requires_grad=False
+        )
+        f_latents = None  # no "feature" latents for LFM branch
 
-        else:
-            zs = torch.randn(num_classes * args.ipc, zdim, device=args.device, requires_grad=False)
-
-            if "imagenet" in args.dataset:
-                one_hot_dim = 1000
-            elif args.dataset == "CIFAR10":
-                one_hot_dim = 10
-            elif args.dataset == "CIFAR100":
-                one_hot_dim = 100
-            if args.avg_w:
-                G_labels = torch.zeros([label_syn.nelement(), one_hot_dim], device=args.device)
-                G_labels[
-                    torch.arange(0, label_syn.nelement(), dtype=torch.long), [class_map_inv[x.item()] for x in
-                                                                         label_syn]] = 1
-                new_latents = []
-                for label in G_labels:
-                    zs = torch.randn(1000, zdim).to(args.device)
-                    ws = G.mapping(zs, torch.stack([label] * 1000))
-                    w = torch.mean(ws, dim=0)
-                    new_latents.append(w)
-                latents = torch.stack(new_latents)
-                del zs
-                for _ in new_latents:
-                    del _
-                del new_latents
-
-
-            else:
-                G_labels = torch.zeros([label_syn.nelement(), one_hot_dim], device=args.device)
-                G_labels[
-                    torch.arange(0, label_syn.nelement(), dtype=torch.long), [class_map_inv[x.item()] for x in
-                                                                              label_syn]] = 1
-                if args.distributed and False:
-                    latents = G.mapping(zs.to("cuda:1"), G_labels.to("cuda:1")).to("cuda:0")
-                else:
-                    latents = G.mapping(zs, G_labels)
-                del zs
-
-            del G_labels
-
-            ws = latents
-            if args.layer is not None:
-                f_latents = torch.cat(
-                    [G.forward(split_ws, f_layer=args.layer, mode="to_f").detach() for split_ws in
-                     torch.split(ws, args.sg_batch)])
-                f_type = f_latents.dtype
-                f_latents = f_latents.to(torch.float32).cpu()
-                f_latents = torch.nan_to_num(f_latents, posinf=5.0, neginf=-5.0)
-                f_latents = torch.clip(f_latents, min=-10, max=10)
-                f_latents = f_latents.to(f_type).cuda()
-
-                print(torch.mean(f_latents), torch.std(f_latents))
-
-                if args.rand_f:
-                    f_latents = (torch.randn(f_latents.shape).to(args.device) * torch.std(
-                        f_latents, dim=(1,2,3), keepdim=True) + torch.mean(f_latents, dim=(1,2,3), keepdim=True))
-
-                f_latents = f_latents.to(f_type)
-                print(torch.mean(f_latents), torch.std(f_latents))
-                f_latents.requires_grad_(True)
-            else:
-                f_latents = None
-
-        if args.pix_init == 'real' and args.space == "p":
-            print('initialize synthetic data from random real images')
-            for c in range(num_classes):
-                latents.data[c*args.ipc:(c+1)*args.ipc] = torch.cat([get_images(c, 1).detach().data for s in range(args.ipc)])
-        else:
-            print('initialize synthetic data from random noise')
-
+        print('initialize synthetic data from random noise')
         latents = latents.detach().to(args.device).requires_grad_(True)
 
         return latents, f_latents, label_syn
 
 
-def get_optimizer_img(latents=None, f_latents=None, G=None, args=None):
-    if args.space == "wp" and (args.layer is not None and args.layer != -1):
-        optimizer_img = torch.optim.SGD([latents], lr=args.lr_w, momentum=0.5)
-        optimizer_img.add_param_group({'params': f_latents, 'lr': args.lr_img, 'momentum': 0.5})
-    else:
-        optimizer_img = torch.optim.SGD([latents], lr=args.lr_img, momentum=0.5)
-
-    if args.learn_g:
-        G.requires_grad_(True)
-        optimizer_img.add_param_group({'params': G.parameters(), 'lr': args.lr_g, 'momentum': 0.5})
-
+def get_optimizer_img_lfm(latents=None, lfm=None, vae=None, args=None):
+    param_groups = []
+    param_groups.append({'params': [latents], 'lr': args.lr_img})
+    optimizer_img = torch.optim.SGD(param_groups, momentum=0.5)
+    if args.learn_lfm and (lfm is not None):
+            for p in lfm.parameters():
+                p.requires_grad_(True)
+            optimizer_img.add_param_group({'params': lfm.parameters(), 'lr': args.lr_g})
+    if args.learn_vae and (vae is not None):
+        for p in vae.parameters():
+            p.requires_grad_(True)
+        optimizer_img.add_param_group({'params': vae.parameters(), 'lr': args.lr_vae})
+    
     optimizer_img.zero_grad()
-
     return optimizer_img
 
 def get_eval_lrs(args):

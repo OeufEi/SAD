@@ -16,6 +16,8 @@ import wandb
 
 from glad_utils import *
 
+from sad_utils import *
+
 def main(args):
     torch.random.manual_seed(0)
     np.random.seed(0)
@@ -72,10 +74,16 @@ def main(args):
         return images_all[idx_shuffle].to(args.device)
 
 
-    ################################### SECOND PLACE TO CHANGE #####################
-    latents, f_latents, label_syn = prepare_latents(channel=channel, num_classes=num_classes, im_size=im_size, zdim=zdim, G=G, class_map_inv=class_map_inv, get_images=get_images, args=args)
+    ################################### SECOND PLACE CHANGE FINISHED #####################
+    if args.space == 'lfm':
+        latents, f_latents, label_syn = prepare_latents_lfm(num_classes=num_classes, im_size=im_size, args=args)
+    else:  
+        latents, f_latents, label_syn = prepare_latents(channel=channel, num_classes=num_classes, im_size=im_size, zdim=zdim, G=G, class_map_inv=class_map_inv, get_images=get_images, args=args)
 
-    optimizer_img = get_optimizer_img(latents=latents, f_latents=f_latents, G=G, args=args)
+    if args.space == 'lfm':
+        optimizer_img = get_optimizer_img_lfm(latents=latents, lfm=lfm, vae=vae, args=args)
+    else:
+        optimizer_img = get_optimizer_img(latents=latents, f_latents=f_latents, G=G, args=args)
     ###############################################################################
 
     criterion = nn.CrossEntropyLoss().to(args.device)
@@ -248,11 +256,18 @@ if __name__ == '__main__':
     parser.add_argument('--lr_img', type=float, default=1, help='learning rate for pixels or f_latents')
     parser.add_argument('--lr_w', type=float, default=0.001, help='learning rate for updating synthetic latent w')
     parser.add_argument('--lr_g', type=float, default=0.0001, help='learning rate for gan weights')
+    parser.add_argument('--lr_vae', type=float, default=0.0001, help='learning rate for vae weights?')
 
     parser.add_argument('--lr_net', type=float, default=0.01, help='learning rate for updating network parameters')
     parser.add_argument('--inner_loop', type=int, default=1, help='inner loop')
     parser.add_argument('--outer_loop', type=int, default=1, help='outer loop')
     parser.add_argument('--dis_metric', type=str, default='ours', help='distance metric')
+
+    parser.add_argument('--f', type=int, default=8, help='vae downsample factor')
+
+    parser.add_argument('--learn_lfm', type=bool, default=False, help='whether to learn flow')
+    parser.add_argument('--learn_vae', type=bool, default=False, help='whether to learn vae')
+
     args = parser.parse_args()
 
     main(args)
