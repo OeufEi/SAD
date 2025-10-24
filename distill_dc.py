@@ -120,7 +120,10 @@ def main(args):
 
         if it > 0 and ((it in eval_it_pool and (save_this_it or it % 1000 == 0)) or (
                 args.save_it is not None and it % args.save_it == 0)):
-            image_logging(latents=latents, f_latents=f_latents, label_syn=label_syn, G=G, it=it, save_this_it=save_this_it, args=args)
+            if args.space == 'lfm':
+                lfm_image_logging(latents=latents, label_syn=label_syn, it=it,save_this_it=save_this_it, lfm=lfm, vae=vae, args=args) 
+            else:
+                image_logging(latents=latents, f_latents=f_latents, label_syn=label_syn, G=G, it=it, save_this_it=save_this_it, args=args)
 
         #########################################################################################
 

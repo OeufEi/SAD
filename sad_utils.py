@@ -287,22 +287,31 @@ def lfm_latent_to_im(lfm, vae, latents, args, y=None):
 
 
 
-def image_logging(latents=None, f_latents=None, label_syn=None, G=None, it=None, save_this_it=None, args=None):
+def lfm_image_logging(latents=None, label_syn=None, it=None, save_this_it=None, lfm=None, vae=None, args=None):
     with torch.no_grad():
         image_syn = latents.cuda()
 
-        if args.space == "wp":
-            with torch.no_grad():
-                if args.layer is None or args.layer == -1:
-                    image_syn = latent_to_im(G, (image_syn.detach(), None), args=args)
-                else:
-                    image_syn = torch.cat(
-                        [latent_to_im(G, (image_syn_split.detach(), f_latents_split.detach()), args=args).detach() for
-                         image_syn_split, f_latents_split, label_syn_split in
-                         zip(torch.split(image_syn, args.sg_batch),
-                             torch.split(f_latents, args.sg_batch),
-                             torch.split(label_syn, args.sg_batch))])
+        # LFM path: render via flow + VAE decode
+        # Batch to keep memory similar to the wp code path
+        if lfm is None or vae is None:
+            raise ValueError("image_logging: lfm/vae must be provided for args.space == 'lfm'")
 
+        # If your flow is class-conditional, pass per-batch labels; else y=None works too.
+        if label_syn is None:
+            # allow unconditional case
+            image_syn = torch.cat([
+                lfm_latent_to_im(lfm, vae, lat_split, args, y=None).detach()
+                for lat_split in torch.split(image_syn, args.sg_batch)
+            ])
+        else:
+            image_syn = torch.cat([
+                lfm_latent_to_im(lfm, vae, lat_split, args, y=lab_split).detach()
+                for lat_split, lab_split in zip(
+                    torch.split(image_syn, args.sg_batch),
+                    torch.split(label_syn, args.sg_batch)
+                )
+            ])
+        
         save_dir = os.path.join(args.logdir, args.dataset, wandb.run.name)
 
         if not os.path.exists(save_dir):
