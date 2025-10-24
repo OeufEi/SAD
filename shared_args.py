@@ -69,7 +69,7 @@ def add_shared_args():
     parser.add_argument('--method', default='dopri5')
     parser.add_argument('--num_steps', default=0)
     parser.add_argument('--cfg', default=1.25)
-    parser.add_argument('--image_size', default=4)
+    parser.add_argument('--image_size', default=32)
     parser.add_argument('--ch_mult',default=[1,2])
     parser.add_argument('--attn_resolutions', default=[])
     parser.add_argument('--use_origin_adm', default=True)
