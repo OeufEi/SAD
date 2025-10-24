@@ -88,7 +88,7 @@ def get_eval_lrs(args):
 
 
 def lfm_eval_loop(
-    latents=None, f_latents=None, label_syn=None, G=None,
+    latents=None, label_syn=None,
     best_acc={}, best_std={}, testloader=None, model_eval_pool=[],
     it=0, channel=3, num_classes=10, im_size=(32, 32), args=None,
     lfm=None, vae=None   # <- NEW for LFM evaluation
