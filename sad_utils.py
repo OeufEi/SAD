@@ -218,14 +218,15 @@ def load_lfm(res, args=None):
         lfm.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
     lfm.eval()
 
-    vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
+    #vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
+    vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(device)
     vae.eval()
 
     latent_shape = (4, res // 8, res // 8)
 
     print(f"[load_lfm] Loaded LFM + VAE for dataset={args.dataset} at res={res}")
 
-    return lfm, vae, latent_shape
+    return lfm, vae #, latent_shape
 
 
 def lfm_latent_to_im(lfm, vae, latents, args, y=None):
