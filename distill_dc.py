@@ -175,7 +175,7 @@ def main(args):
                                            torch.split(f_latents, args.sg_batch),
                                            torch.split(label_syn, args.sg_batch))])
             elif args.space == "lfm":
-                image_syn_w_grad = lfm_latent_to_im(lfm, vae, latents, args)
+                image_syn_w_grad = lfm_latent_to_im(lfm, vae, latents, args, y=label_syn)
             else:
                 image_syn_w_grad = latents
 
