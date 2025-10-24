@@ -63,15 +63,18 @@ def add_shared_args():
 
     parser.add_argument('--special_gan', default=None)
 
-    parser.add_argument('--MODEL_TYPE', default = 'adm')
-    parser.add_argument('--EPOCH_ID', default = 1125)
-    parser.add_argument('--EXP', default='imnet_f8_adm')
-    parser.add_argument('--METHOD', default='dopri5')
-    parser.add_argument('--STEPS', default=0)
-    parser.add_argument('--CFG', default=1.25)
-    parser.add_argument('IMG_SIZE', default=32)
-    parser.add_argument('--CH_MULT',"1 2 2 2")
-    parser.add_argument('ATTN_RES', "8 4")
+    parser.add_argument('--model_type', default = 'adm')
+    parser.add_argument('--epoch_id', default = 1125)
+    parser.add_argument('--exp', default='imnet_f8_adm')
+    parser.add_argument('--method', default='dopri5')
+    parser.add_argument('--num_steps', default=0)
+    parser.add_argument('--cfg', default=1.25)
+    parser.add_argument('--img_size', default=32)
+    parser.add_argument('--ch_mult',default="1 2 2 2")
+    parser.add_argument('--attn_res', default="8 4")
+    parser.add_argument('--use_origin_adm', default=True)
+    parser.add_argument('--nf', default=128)
+    parser.add_argument('--batch_size', default=128)
 
 
     return parser
