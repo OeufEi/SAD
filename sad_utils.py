@@ -207,7 +207,7 @@ def load_lfm(res, args=None):
     #elif args.dataset.upper() == "CIFAR100":
         #flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_cifar100_{res}.pt")
         #vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_cifar100")
-    #else:
+    else:
         # default, but unimplemented
         flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_generic_{res}.pt")
         vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_generic")
