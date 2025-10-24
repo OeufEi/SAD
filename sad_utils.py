@@ -203,7 +203,7 @@ def load_lfm(res, args=None):
         #flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_imagenet{res}.pt")
         #vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_imagenet")
     elif args.dataset.upper() == "CIFAR10":
-        flow_ckpt = getattr(args, "lfm_ckpt", f"../LFM/saved_info/latent_flow/imagenet/imnet_f8_adm/model_1125.pth")
+        flow_ckpt = getattr(args, "lfm_ckpt", "/LFM/saved_info/latent_flow/imagenet/imnet_f8_adm/model_1125.pth")
         vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/VAE_cifar10.pt")
     #elif args.dataset.upper() == "CIFAR100":
         #flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_cifar100_{res}.pt")
