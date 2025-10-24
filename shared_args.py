@@ -89,6 +89,11 @@ def add_shared_args():
     parser.add_argument('--use_new_attention_order', default=False)
     parser.add_argument('--label_dropout', default=0.0)
     parser.add_argument('--num_in_channels', default=3)
+    parser.add_argument('--compute_nfe', default=False)
+    parser.add_argument('--atol', default=1e-5)
+    parser.add_argument("--rtol", type=float, default=1e-5, help="absolute tolerance error")
+    
+
 
 
 
