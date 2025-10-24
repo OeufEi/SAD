@@ -211,12 +211,13 @@ def main(args):
 
 
 
-            ################################## FOURTH PLACE TO CHANGE ############################
+            ################################## FOURTH PLACE TO CHANGE COMPLETE ############################
 
             if args.space == "wp":
                 # this method works in-line and back-props gradients to latents and f_latents
                 gan_backward(latents=latents, f_latents=f_latents, image_syn=image_syn, G=G, args=args)
-
+            elif args.space == 'lfm':
+                pass
             else:
                 latents.grad = image_syn.grad.detach().clone()
             
