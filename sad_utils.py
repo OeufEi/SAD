@@ -230,6 +230,12 @@ def load_lfm(res, args=None):
 
 
 def lfm_latent_to_im(lfm, vae, latents, args, y=None):
+    import sys
+    import os
+    p = os.path.join("LFM")
+    if p not in sys.path:
+        sys.path.append(p)
+    from LFM.test_flow_latent import sample_from_model
     """
     Turn initial VAE latents into normalized images using the Latent Flow Matching model.
 
