@@ -234,7 +234,9 @@ def main(args):
 
 
             optimizer_img.step()
-            optimizer_img.zero_grad(set_to_none=True)
+            optimizer_img.zero_grad(set_to_none=True)       
+
+            loss_avg += float(total_loss.detach())
 
 
             if ol == args.outer_loop - 1:
