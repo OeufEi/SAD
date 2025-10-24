@@ -7,7 +7,7 @@ import os
 import torchvision
 import gc
 from tqdm import tqdm
-from torchdiffeq import odeint
+from torchdiffeq import odeint_adjoint as odeint
 
 from utils import get_network, config, evaluate_synset
 
