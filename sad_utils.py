@@ -228,8 +228,78 @@ def load_lfm(res, args=None):
 
     return lfm, vae #, latent_shape
 
+def sample_from_model(model, x_0, model_kwargs, args):
+    """
+    Integrate the latent flow ODE from t=1 -> 0.
 
-def lfm_latent_to_im(lfm, vae, latents, args, y=None):
+    Args:
+        model:         flow model; must implement forward(t, x, **model_kwargs)
+                       and optionally forward_with_cfg(t, x, **model_kwargs) if using CFG.
+        x_0:           initial latent tensor (B, C=4, H/8, W/8), requires_grad=True for training.
+        model_kwargs:  dict; may include 'y' (labels), 'cfg_scale' (float), etc.
+        args:          namespace with ODE/sampler settings.
+
+    Returns:
+        x_traj: tensor of shape (2, B, C, H/8, W/8) with states at t=[1.0, 0.0].
+                The final latent is x_traj[-1].
+                If args.compute_nfe is True, returns (x_traj, nfe).
+    """
+    # Infer device/dtype from x_0
+    device = x_0.device
+    dtype  = x_0.dtype
+
+    # Choose solver options
+    if getattr(args, "method", None) in ADAPTIVE_SOLVER:
+        options = {"dtype": torch.float64}  # dopri5, bdf benefit from float64 internal state
+    else:
+        # fixed-step solvers (e.g., euler, midpoint, rk4) use explicit step_size; optional stochastic perturb
+        options = {
+            "step_size": getattr(args, "step_size", 0.1),
+            "perturb":   getattr(args, "perturb", False),
+        }
+
+    # Optionally wrap model to count NFEs
+    count_nfe = getattr(args, "compute_nfe", False)
+    wrapped_model = model
+    if count_nfe:
+        wrapped_model = NFECount(model).to(device)
+
+    # Build the time tensor on the correct device/dtype
+    # Keep it float32 to match typical ODE solvers; model can internally cast as needed.
+    t = torch.tensor([1.0, 0.0], device=device, dtype=torch.float32)
+
+    # Determine CFG scale (args overrides in model_kwargs only if not provided)
+    cfg_scale = model_kwargs.get("cfg_scale", getattr(args, "cfg_scale", 1.0))
+
+    # ODE RHS
+    def denoiser(t_scalar, x_state):
+        if cfg_scale is not None and cfg_scale > 1.0 and hasattr(wrapped_model, "forward_with_cfg"):
+            return wrapped_model.forward_with_cfg(t_scalar, x_state, **{**model_kwargs, "cfg_scale": cfg_scale})
+        else:
+            return wrapped_model(t_scalar, x_state, **model_kwargs)
+
+    # Run adjoint ODE solve (keeps graph for grads w.r.t. x_0)
+    x_traj = odeint(
+        denoiser,
+        x_0.to(device=device, dtype=dtype),
+        t,
+        method=getattr(args, "method", "dopri5"),
+        atol=getattr(args, "atol", 1e-5),
+        rtol=getattr(args, "rtol", 1e-5),
+        adjoint_method=getattr(args, "method", "dopri5"),
+        adjoint_atol=getattr(args, "atol", 1e-5),
+        adjoint_rtol=getattr(args, "rtol", 1e-5),
+        options=options,
+        adjoint_params=wrapped_model.parameters(),  # required so grads can flow through the adjoint
+    )
+
+    if count_nfe:
+        return x_traj, wrapped_model.nfe
+    return x_traj
+
+
+
+'''def lfm_latent_to_im(lfm, vae, latents, args, y=None):
     import sys
     import os
     p = os.path.join("LFM")
@@ -291,7 +361,56 @@ def lfm_latent_to_im(lfm, vae, latents, args, y=None):
         # (Your original code optionally uses mean_1/std_1 when distributed; keep parity if needed.)
 
     im = (im - mean) / std
+    return im'''
+
+def lfm_latent_to_im(lfm, vae, latents, args, y=None):
+    """
+    Turn *initial* VAE latents (B, 4, H/8, W/8) into dataset-normalized images using LFM + VAE.
+    - lfm: flow-matching model (frozen, .eval())
+    - vae: AutoencoderKL (frozen, .eval())
+    - latents: torch.Tensor, shape [B, 4, H/8, W/8], requires_grad=True in training loop
+    - y: optional LongTensor of shape [B] with class ids if the LFM is class-conditional
+    Returns
+    - im: tensor of shape [B, 3, H, W], normalized by dataset mean/std (same as latent_to_im)
+    """
+    # ----- Build model_kwargs (CFG + labels) like in your test_flow code -----
+    if (y is not None) and (getattr(args, "cfg_scale", 1.0) > 1.0):
+        # duplicate for classifier-free guidance
+        x_0 = torch.cat([latents, latents], dim=0)
+        y_null = (torch.full_like(y, fill_value=args.num_classes)  # null idx for DiT
+                  if "DiT" in getattr(args, "model_type", "")
+                  else torch.zeros_like(y))
+        y_all = torch.cat([y, y_null], dim=0)
+        model_kwargs = dict(y=y_all, cfg_scale=args.cfg_scale)
+    else:
+        x_0 = latents
+        model_kwargs = {} if y is None else dict(y=y)
+
+    # ----- Integrate ODE from t=1 -> 0 and take the final latent -----
+    # sample_from_model returns the whole trajectory; take the last item
+    z_Tto0 = sample_from_model(lfm, x_0, model_kwargs, args)        # ODE solve (differentiable) :contentReference[oaicite:0]{index=0}
+    z_0    = z_Tto0[-1]
+
+    # If CFG was used, drop the null half (keep conditioned half)
+    if (y is not None) and (getattr(args, "cfg_scale", 1.0) > 1.0):
+        z_0, _ = z_0.chunk(2, dim=0)                                 # :contentReference[oaicite:1]{index=1}
+
+    # ----- Decode with the VAE (divide by scale_factor first) -----
+    im = vae.decode(z_0 / args.scale_factor).sample                  # :contentReference[oaicite:2]{index=2}
+
+    # ----- Match latent_to_im normalization: [-1,1] -> [0,1] -> (x-mean)/std -----
+    im = (im + 1.0) / 2.0
+    if "imagenet" in args.dataset:
+        mean, std = config.mean, config.std
+    elif args.dataset in ["CIFAR10", "CIFAR100"]:
+        mean, std = config.mean, config.std
+    else:
+        # Fallback: assume mean/std provided in args or config
+        mean, std = config.mean, config.std
+    im = (im - mean) / std
+
     return im
+
 
 
 
