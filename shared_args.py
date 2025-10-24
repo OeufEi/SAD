@@ -63,4 +63,15 @@ def add_shared_args():
 
     parser.add_argument('--special_gan', default=None)
 
+    parser.add_argument('--MODEL_TYPE', default = 'adm')
+    parser.add_argument('--EPOCH_ID', default = 1125)
+    parser.add_argument('--EXP', default='imnet_f8_adm')
+    parser.add_argument('--METHOD', default='dopri5')
+    parser.add_argument('--STEPS', default=0)
+    parser.add_argument('--CFG', default=1.25)
+    parser.add_argument('IMG_SIZE', default=32)
+    parser.add_argument('--CH_MULT',"1 2 2 2")
+    parser.add_argument('ATTN_RES', "8 4")
+
+
     return parser

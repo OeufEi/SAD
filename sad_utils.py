@@ -188,7 +188,7 @@ def load_lfm(res, args=None):
     p = os.path.join("LFM")
     if p not in sys.path:
         sys.path.append(p)
-    from test_flow_latent import create_network
+    from LFM.models import create_network
     from diffusers.models import AutoencoderKL
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
