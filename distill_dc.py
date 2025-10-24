@@ -26,6 +26,7 @@ def main(args):
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.dsa_param = ParamDiffAug()
     args.dsa = False if args.dsa_strategy in ['none', 'None'] else True
+    args.space = 'lfm'
 
     run = wandb.init(
         project="GLaD",
