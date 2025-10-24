@@ -190,14 +190,10 @@ def load_lfm(res, args=None):
     from test_flow_latent import create_network
     from diffusers.models import AutoencoderKL
 
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
-    # --- Select pretrained checkpoints based on dataset ---
     if args is None:
         raise ValueError("load_lfm requires args with dataset and ckpt info")
-
 
     if "imagenet" in args.dataset.lower():
         pass
@@ -215,73 +211,78 @@ def load_lfm(res, args=None):
         flow_ckpt = getattr(args, "lfm_ckpt", f"../checkpoints/lfm_generic_{res}.pt")
         vae_ckpt = getattr(args, "pretrained_autoencoder_ckpt", "../checkpoints/vae_generic")
 
-
     lfm = create_network(args).to(device)
     if os.path.exists(flow_ckpt):
         ckpt = torch.load(flow_ckpt, map_location=device)
         lfm.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
     lfm.eval()
 
-
     vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
     vae.eval()
 
-
     latent_shape = (4, res // 8, res // 8)
 
-
     print(f"[load_lfm] Loaded LFM + VAE for dataset={args.dataset} at res={res}")
-
 
     return lfm, vae, latent_shape
 
 
-def lfm_latent_to_im(G, latents, args=None):
+def lfm_latent_to_im(lfm, vae, latents, args, y=None):
+    """
+    Turn initial VAE latents into normalized images using the Latent Flow Matching model.
 
-    if args.space == "p":
-        return latents
+    lfm:  the flow-matching model (frozen; .eval())
+    vae:  AutoencoderKL (frozen; .eval())
+    latents: torch.Tensor, shape [B, 4, H/8, W/8], requires_grad=True
+    y:     optional LongTensor of class ids, shape [B], or None for unconditional
 
+    Returns:
+        im: normalized images ready for the student network, shape [B, C, H, W]
+    """
+    # ---- Build model kwargs (CFG & labels), following your test files ----
+    # If you use classifier-free guidance:
+    #   - duplicate x and y, append a null y for half of the batch
+    #   - pass cfg_scale in model_kwargs
+    if getattr(args, "cfg_scale", 1.0) > 1.0 and (y is not None):
+        # Duplicate initial latents and labels
+        x_0 = torch.cat([latents, latents], dim=0)
+        if "DiT" in getattr(args, "model_type", ""):
+            # DiT uses an extra "null" class index = num_classes
+            y_null = torch.tensor([args.num_classes] * y.shape[0], device=y.device, dtype=y.dtype)
+        else:
+            # Others use zeros as null
+            y_null = torch.zeros_like(y)
+        y_all = torch.cat([y, y_null], dim=0)
+        model_kwargs = dict(y=y_all, cfg_scale=args.cfg_scale)
+    else:
+        x_0 = latents
+        model_kwargs = {} if y is None else dict(y=y)
 
-    mean, std = config.mean, config.std
+    # ---- Integrate ODE from t=1 -> 0 to get a VAE latent, then decode ----
+    # sample_from_model returns [x_t at t=1, x_t at t=0]; we need the final latent at t=0
+    fake_latent = sample_from_model(lfm, x_0, model_kwargs, args)[-1]  # differentiable ODE call :contentReference[oaicite:0]{index=0}
 
+    # If CFG was used, throw away the null half (keep the conditioned half)
+    if getattr(args, "cfg_scale", 1.0) > 1.0 and (y is not None):
+        fake_latent, _ = fake_latent.chunk(2, dim=0)  # keep first half only :contentReference[oaicite:1]{index=1}
 
+    # Decode with VAE; your flow code divides by args.scale_factor before decode
+    im = vae.decode(fake_latent / args.scale_factor).sample               # :contentReference[oaicite:2]{index=2}
+
+    # ---- Match StyleGAN path’s normalization ----
+    # Your pipelines treat generator output as in [-1,1] then:
+    #   (im + 1)/2 to [0,1] and per-dataset normalize by mean/std
+    # (Exactly what test_flow does before saving) :contentReference[oaicite:3]{index=3}
+    im = (im + 1.0) / 2.0
+
+    # Dataset-specific normalization (same as latent_to_im)
     if "imagenet" in args.dataset:
-        class_map = {i: x for i, x in enumerate(config.img_net_classes)}
+        mean, std = config.mean, config.std
+    elif args.dataset in ["CIFAR10", "CIFAR100"]:
+        mean, std = config.mean, config.std
+        # (Your original code optionally uses mean_1/std_1 when distributed; keep parity if needed.)
 
-
-        if args.space == "p":
-            im = latents
-
-
-        elif args.space == "wp":
-            if args.layer is None or args.layer==-1:
-                im = G(latents[0], mode="wp")
-            else:
-                im = G(latents[0], latents[1], args.layer, mode="from_f")
-
-
-        im = (im + 1) / 2
-        im = (im - mean) / std
-
-
-    elif args.dataset == "CIFAR10" or args.dataset == "CIFAR100":
-        if args.space == "p":
-            im = latents
-        elif args.space == "wp":
-            if args.layer is None or args.layer == -1:
-                im = G(latents[0], mode="wp")
-            else:
-                im = G(latents[0], latents[1], args.layer, mode="from_f")
-
-
-            if args.distributed and False:
-                mean, std = config.mean_1, config.std_1
-
-
-        im = (im + 1) / 2
-        im = (im - mean) / std
-
-
+    im = (im - mean) / std
     return im
 
 
