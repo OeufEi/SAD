@@ -455,6 +455,8 @@ def lfm_latent_to_im(lfm, vae, latents, args, y=None):
     Returns
     - im: tensor of shape [B, 3, H, W], normalized by dataset mean/std (same as latent_to_im)
     """
+
+    from LFM.test_flow_latent import sample_from_model
     # ----- Build model_kwargs (CFG + labels) like in your test_flow code -----
     if (y is not None) and (getattr(args, "cfg_scale", 1.0) > 1.0):
         # duplicate for classifier-free guidance
