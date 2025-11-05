@@ -300,8 +300,8 @@ def load_lfm(res, args=None):
         vae = AutoencoderKL.from_pretrained(vae_ckpt).to(device)
     except Exception as e:
         # fallback to SD VAE if provided string
-        print(f"[load_lfm] could not load {vae_ckpt} ({e}), falling back to 'ariG23498/vae-cifar10'")
-        vae = AutoencoderKL.from_pretrained("ariG23498/vae-cifar10").to(device) # stabilityai/sd-vae-ft-mse
+        print(f"[load_lfm] could not load {vae_ckpt} ({e}), falling back to 'stabilityai/sd-vae-ft-mse'")
+        vae = AutoencoderKL.from_pretrained("/stabilityai/sd-vae-ft-mse").to(device) # stabilityai/sd-vae-ft-mse
     vae.eval()
 
     print(f"[load_lfm] Done. Loaded LFM + VAE for dataset={args.dataset} at res={res}")
